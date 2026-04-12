@@ -9,12 +9,12 @@ const STORE_SETTINGS = {
     minAvgTicket: 13000,
     minClients: 8,
   },
-  nishikita: {
-    name: "西宮北口店",
-    minProductivity: 10000,
-    minAvgTicket: 10000,
-    minClients: 10,
-  },
+ nishikita: {
+  name: "西宮北口店",
+  minProductivity: 11000,
+  minAvgTicket: 9000,
+  minClients: 11,
+},
 } as const;
 
 type StoreKey = keyof typeof STORE_SETTINGS;
