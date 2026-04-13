@@ -1,109 +1,214 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { STORES } from "../../lib/constants/stores";
-import {
-  RANK_LABELS,
-  StaffProfile,
-  StaffRank,
-} from "../../lib/settings-types";
-import {
-  getStaffByStore,
-  addStaff,
-  updateStaff,
-  removeStaff,
-} from "../../lib/storage/staffProfiles";
+import { getActiveStaffOptions } from "../lib/storage/staffProfiles";
+import { RANK_LABELS, type StaffRank } from "../lib/settings-types";
 
-const RANKS = Object.entries(RANK_LABELS) as [StaffRank, string][];
+const STORE_SETTINGS: Record<
+  string,
+  {
+    label: string;
+    targetProductivity: number;
+    targetAvgPrice: number;
+    targetRotation: number;
+    excludeACR?: boolean;
+  }
+> = {
+  sanda: { label: "三田店", targetProductivity: 6000, targetAvgPrice: 8000, targetRotation: 1.0, excludeACR: true },
+  nishinomiyakita: { label: "西宮北口店", targetProductivity: 7000, targetAvgPrice: 9000, targetRotation: 1.2 },
+  sakasegawa: { label: "逆瀬川店", targetProductivity: 6500, targetAvgPrice: 8500, targetRotation: 1.1 },
+  nigawa: { label: "仁川店", targetProductivity: 6200, targetAvgPrice: 8200, targetRotation: 1.0 },
+  kawanishi: { label: "川西店", targetProductivity: 6000, targetAvgPrice: 8000, targetRotation: 1.1 },
+  umeda: { label: "梅田店", targetProductivity: 8000, targetAvgPrice: 10000, targetRotation: 1.3 },
+};
 
-type EditingState = {
-  id: string;
-  name: string;
-  rank: StaffRank;
-} | null;
+const ACTIONS: Record<string, string[]> = {
+  low_price: [
+    "トリートメント・ヘッドスパのセット提案率を計測・目標設定する",
+    "施術前カウンセリングでデザイン上位メニューを必ず提示する",
+    "高単価メニューの提案回数を増やす",
+  ],
+  low_rotation: [
+    "予約導線の離脱箇所を特定する",
+    "繁忙時間帯の予約枠を早めに埋める",
+    "施術時間が長い工程を1つ見直す",
+  ],
+  low_productivity: [
+    "生産性が低い曜日・時間帯を特定する",
+    "アシスタントとの連携タイミングを見直す",
+    "施術時間を10%短縮できる工程を1つ特定する",
+  ],
+  none: [
+    "現在の水準を維持してください",
+    "次の目標設定を店長と相談しましょう",
+    "後輩スタッフへの技術共有を検討してください",
+  ],
+};
 
-export default function SettingsPage() {
-  const [selectedStoreId, setSelectedStoreId] = useState(STORES[0].id);
-  const [staffList, setStaffList] = useState<StaffProfile[]>([]);
-  const [newName, setNewName] = useState("");
-  const [newRank, setNewRank] = useState<StaffRank>("stylist");
-  const [editing, setEditing] = useState<EditingState>(null);
-  const [error, setError] = useState("");
-  const [successMsg, setSuccessMsg] = useState("");
+type RiskLevel = "green" | "yellow" | "red";
 
-  const reload = useCallback(() => {
-    setStaffList(getStaffByStore(selectedStoreId));
-  }, [selectedStoreId]);
+function getRiskLevel(value: number, target: number): RiskLevel {
+  const ratio = value / target;
+  if (ratio >= 0.95) return "green";
+  if (ratio >= 0.8) return "yellow";
+  return "red";
+}
+
+const RISK_COLORS: Record<
+  RiskLevel,
+  { text: string; bg: string; border: string }
+> = {
+  green: {
+    text: "#10b981",
+    bg: "rgba(16,185,129,0.08)",
+    border: "rgba(16,185,129,0.25)",
+  },
+  yellow: {
+    text: "#f59e0b",
+    bg: "rgba(245,158,11,0.08)",
+    border: "rgba(245,158,11,0.25)",
+  },
+  red: {
+    text: "#ef4444",
+    bg: "rgba(239,68,68,0.08)",
+    border: "rgba(239,68,68,0.25)",
+  },
+};
+
+type DiagnosisResult = {
+  productivity: number;
+  avgPrice: number;
+  rotation: number;
+  productivityRisk: RiskLevel;
+  avgPriceRisk: RiskLevel;
+  rotationRisk: RiskLevel;
+  primaryIssueLabel: string;
+  primaryIssueKey: string;
+  primaryIssueRisk: RiskLevel;
+  actions: string[];
+};
+
+function diagnose(
+  sales: number,
+  customers: number,
+  hours: number,
+  storeId: string
+): DiagnosisResult {
+  const settings = STORE_SETTINGS[storeId];
+  const productivity = hours > 0 ? Math.round(sales / hours) : 0;
+  const avgPrice = customers > 0 ? Math.round(sales / customers) : 0;
+  const rotation = hours > 0 ? Math.round((customers / hours) * 100) / 100 : 0;
+
+  const productivityRisk = getRiskLevel(productivity, settings.targetProductivity);
+  const avgPriceRisk = getRiskLevel(avgPrice, settings.targetAvgPrice);
+  const rotationRisk = getRiskLevel(rotation, settings.targetRotation);
+
+  let primaryIssueKey = "none";
+  let primaryIssueLabel = "課題なし";
+  let primaryIssueRisk: RiskLevel = "green";
+
+  if (avgPriceRisk === "red") {
+    primaryIssueKey = "low_price";
+    primaryIssueLabel = "客単価の向上";
+    primaryIssueRisk = "red";
+  } else if (rotationRisk === "red") {
+    primaryIssueKey = "low_rotation";
+    primaryIssueLabel = "回転数の改善";
+    primaryIssueRisk = "red";
+  } else if (productivityRisk === "red") {
+    primaryIssueKey = "low_productivity";
+    primaryIssueLabel = "生産性の改善";
+    primaryIssueRisk = "red";
+  } else if (avgPriceRisk === "yellow") {
+    primaryIssueKey = "low_price";
+    primaryIssueLabel = "客単価の向上";
+    primaryIssueRisk = "yellow";
+  } else if (rotationRisk === "yellow") {
+    primaryIssueKey = "low_rotation";
+    primaryIssueLabel = "回転数の改善";
+    primaryIssueRisk = "yellow";
+  } else if (productivityRisk === "yellow") {
+    primaryIssueKey = "low_productivity";
+    primaryIssueLabel = "生産性の改善";
+    primaryIssueRisk = "yellow";
+  }
+
+  return {
+    productivity,
+    avgPrice,
+    rotation,
+    productivityRisk,
+    avgPriceRisk,
+    rotationRisk,
+    primaryIssueLabel,
+    primaryIssueKey,
+    primaryIssueRisk,
+    actions: ACTIONS[primaryIssueKey],
+  };
+}
+
+export default function Home() {
+  const [storeId, setStoreId] = useState("nishinomiyakita");
+  const [selectedStaffId, setSelectedStaffId] = useState("");
+  const [selectedStaffName, setSelectedStaffName] = useState("");
+  const [selectedStaffRank, setSelectedStaffRank] = useState<StaffRank>("stylist");
+
+  const [sales, setSales] = useState("");
+  const [customers, setCustomers] = useState("");
+  const [hours, setHours] = useState("");
+
+  const [result, setResult] = useState<DiagnosisResult | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [checkedActions, setCheckedActions] = useState<boolean[]>([false, false, false]);
+
+  const staffOptions = useMemo(() => {
+    return getActiveStaffOptions(storeId);
+  }, [storeId]);
 
   useEffect(() => {
-    reload();
-    setError("");
-    setSuccessMsg("");
-    setEditing(null);
-  }, [selectedStoreId, reload]);
-
-  function showSuccess(msg: string) {
-    setSuccessMsg(msg);
-    setTimeout(() => setSuccessMsg(""), 2000);
-  }
-
-  function handleAdd() {
-    if (!newName.trim()) {
-      setError("名前を入力してください");
+    if (staffOptions.length === 0) {
+      setSelectedStaffId("");
+      setSelectedStaffName("");
+      setSelectedStaffRank("stylist");
       return;
     }
 
-    const result = addStaff({
-      storeId: selectedStoreId,
-      name: newName,
-      rank: newRank,
-    });
+    const current = staffOptions.find((s) => s.id === selectedStaffId);
 
-    if (!result.ok) {
-      setError(result.error ?? "エラーが発生しました");
+    if (current) {
+      setSelectedStaffName(current.name);
+      setSelectedStaffRank(current.rank);
       return;
     }
 
-    setNewName("");
-    setNewRank("stylist");
-    setError("");
-    reload();
-    showSuccess("追加しました");
-  }
+    setSelectedStaffId(staffOptions[0].id);
+    setSelectedStaffName(staffOptions[0].name);
+    setSelectedStaffRank(staffOptions[0].rank);
+  }, [staffOptions, selectedStaffId]);
 
-  function handleEditSave() {
-    if (!editing) return;
+  const handleDiagnose = async () => {
+    const s = parseFloat(sales);
+    const c = parseFloat(customers);
+    const h = parseFloat(hours);
 
-    if (!editing.name.trim()) {
-      setError("名前を入力してください");
-      return;
-    }
+    if (!selectedStaffId) return;
+    if (!s || !c || !h) return;
 
-    const result = updateStaff(editing.id, {
-      name: editing.name,
-      rank: editing.rank,
-    });
+    setLoading(true);
+    await new Promise((r) => setTimeout(r, 500));
 
-    if (!result.ok) {
-      setError(result.error ?? "エラーが発生しました");
-      return;
-    }
+    const diagnosed = diagnose(s, c, h, storeId);
+    setResult(diagnosed);
+    setCheckedActions([false, false, false]);
+    setLoading(false);
+  };
 
-    setEditing(null);
-    setError("");
-    reload();
-    showSuccess("更新しました");
-  }
+  const toggleCheck = (i: number) => {
+    setCheckedActions((prev) => prev.map((v, idx) => (idx === i ? !v : v)));
+  };
 
-  function handleRemove(id: string, name: string) {
-    if (!confirm(`「${name}」を削除しますか？`)) return;
-    removeStaff(id);
-    reload();
-    showSuccess("削除しました");
-  }
-
-  const selectedStore = STORES.find((s) => s.id === selectedStoreId)!;
+  const storeLabel = STORE_SETTINGS[storeId]?.label ?? "";
 
   return (
     <div
@@ -111,8 +216,7 @@ export default function SettingsPage() {
         minHeight: "100vh",
         background: "#0d1117",
         color: "#f1f5f9",
-        fontFamily:
-          "'Noto Sans JP', 'Hiragino Kaku Gothic ProN', sans-serif",
+        fontFamily: "'Noto Sans JP', 'Hiragino Kaku Gothic ProN', 'Hiragino Sans', sans-serif",
       }}
     >
       <header
@@ -143,408 +247,536 @@ export default function SettingsPage() {
           >
             ✂
           </div>
-          <span
-            style={{
-              fontWeight: 800,
-              fontSize: 15,
-              letterSpacing: "-0.02em",
-            }}
-          >
+          <span style={{ fontWeight: 800, fontSize: 15, letterSpacing: "-0.02em" }}>
             サロンOS
           </span>
-          <span style={{ color: "#6b7280", fontSize: 13 }}>/</span>
-          <span style={{ fontSize: 13, color: "#9ca3af", fontWeight: 600 }}>
-            設定
-          </span>
         </div>
 
-        <Link
-          href="/"
-          style={{
-            fontSize: 12,
-            color: "#6b7280",
-            textDecoration: "none",
-            padding: "6px 12px",
-            borderRadius: 8,
-            border: "1px solid rgba(255,255,255,0.08)",
-          }}
-        >
-          ← ホームへ
-        </Link>
-      </header>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <Link
+            href="/settings"
+            style={{
+              fontSize: 12,
+              color: "#9ca3af",
+              textDecoration: "none",
+              padding: "6px 12px",
+              borderRadius: 8,
+              border: "1px solid rgba(255,255,255,0.08)",
+            }}
+          >
+            設定
+          </Link>
 
-      <main style={{ maxWidth: 560, margin: "0 auto", padding: "28px 20px 60px" }}>
-        <h1 style={{ fontSize: 20, fontWeight: 800, marginBottom: 4 }}>
-          スタッフ設定
-        </h1>
-        <p style={{ fontSize: 13, color: "#6b7280", marginBottom: 24 }}>
-          店舗を選択してスタッフを登録・管理してください
-        </p>
-
-        <div
-          style={{
-            display: "flex",
-            flexWrap: "wrap",
-            gap: 8,
-            marginBottom: 24,
-          }}
-        >
-          {STORES.map((store) => (
-            <button
-              key={store.id}
-              onClick={() => setSelectedStoreId(store.id)}
+          {(storeLabel || selectedStaffName) && (
+            <div
               style={{
-                padding: "7px 14px",
+                fontSize: 12,
+                color: "#9ca3af",
+                background: "rgba(255,255,255,0.05)",
+                border: "1px solid rgba(255,255,255,0.08)",
                 borderRadius: 99,
-                fontSize: 13,
+                padding: "4px 12px",
                 fontWeight: 600,
-                cursor: "pointer",
-                transition: "all 0.15s ease",
-                background:
-                  selectedStoreId === store.id
-                    ? "#3b82f6"
-                    : "rgba(255,255,255,0.04)",
-                color:
-                  selectedStoreId === store.id ? "#fff" : "#9ca3af",
-                border:
-                  selectedStoreId === store.id
-                    ? "1px solid #3b82f6"
-                    : "1px solid rgba(255,255,255,0.08)",
+                letterSpacing: "0.02em",
               }}
             >
-              {store.label}
-            </button>
-          ))}
+              {storeLabel}
+              {selectedStaffName ? ` / ${selectedStaffName}` : ""}
+            </div>
+          )}
         </div>
+      </header>
 
+      <main style={{ maxWidth: 480, margin: "0 auto", padding: "24px 20px 48px" }}>
         <div
           style={{
             background: "#161b27",
             border: "1px solid rgba(255,255,255,0.08)",
             borderRadius: 16,
-            padding: 20,
+            padding: "20px",
             marginBottom: 20,
           }}
         >
-          <div
-            style={{
-              fontSize: 13,
-              fontWeight: 700,
-              color: "#9ca3af",
-              marginBottom: 14,
-              letterSpacing: "0.04em",
-            }}
-          >
-            {selectedStore.label}にスタッフを追加
-            <span
+          <div style={{ marginBottom: 16 }}>
+            <label
               style={{
-                marginLeft: 8,
-                fontSize: 11,
-                color: staffList.length >= 10 ? "#ef4444" : "#6b7280",
+                fontSize: 12,
+                color: "#9ca3af",
+                display: "block",
+                marginBottom: 6,
+                fontWeight: 600,
+                letterSpacing: "0.04em",
               }}
             >
-              {staffList.length}/10名
-            </span>
-          </div>
-
-          <div
-            style={{
-              display: "flex",
-              gap: 10,
-              marginBottom: 12,
-              flexWrap: "wrap",
-            }}
-          >
-            <input
-              type="text"
-              value={newName}
-              onChange={(e) => {
-                setNewName(e.target.value);
-                setError("");
-              }}
-              placeholder="スタッフ名（例：池田）"
-              disabled={staffList.length >= 10}
-              onKeyDown={(e) => e.key === "Enter" && handleAdd()}
-              style={{
-                flex: "1 1 160px",
-                padding: "11px 14px",
-                background: "#0d1117",
-                border: "1px solid rgba(255,255,255,0.1)",
-                borderRadius: 10,
-                color: "#f1f5f9",
-                fontSize: 14,
-                opacity: staffList.length >= 10 ? 0.5 : 1,
-              }}
-            />
+              店舗選択
+            </label>
 
             <select
-              value={newRank}
-              onChange={(e) => setNewRank(e.target.value as StaffRank)}
-              disabled={staffList.length >= 10}
+              value={storeId}
+              onChange={(e) => setStoreId(e.target.value)}
               style={{
-                flex: "1 1 140px",
-                padding: "11px 14px",
+                width: "100%",
+                padding: "13px 14px",
                 background: "#0d1117",
                 border: "1px solid rgba(255,255,255,0.1)",
                 borderRadius: 10,
                 color: "#f1f5f9",
-                fontSize: 14,
-                opacity: staffList.length >= 10 ? 0.5 : 1,
+                fontSize: 15,
+                appearance: "none",
+                cursor: "pointer",
+                boxSizing: "border-box",
               }}
             >
-              {RANKS.map(([val, label]) => (
-                <option key={val} value={val}>
-                  {label}
+              {Object.entries(STORE_SETTINGS).map(([id, s]) => (
+                <option key={id} value={id}>
+                  {s.label}
                 </option>
               ))}
             </select>
           </div>
 
-          {error && (
-            <div
+          <div style={{ marginBottom: 16 }}>
+            <label
               style={{
                 fontSize: 12,
-                color: "#ef4444",
-                marginBottom: 10,
-                padding: "8px 12px",
-                background: "rgba(239,68,68,0.08)",
-                borderRadius: 8,
-                border: "1px solid rgba(239,68,68,0.2)",
+                color: "#9ca3af",
+                display: "block",
+                marginBottom: 6,
+                fontWeight: 600,
+                letterSpacing: "0.04em",
               }}
             >
-              {error}
-            </div>
-          )}
+              スタッフ選択
+            </label>
 
-          {successMsg && (
-            <div
-              style={{
-                fontSize: 12,
-                color: "#10b981",
-                marginBottom: 10,
-                padding: "8px 12px",
-                background: "rgba(16,185,129,0.08)",
-                borderRadius: 8,
-                border: "1px solid rgba(16,185,129,0.2)",
-              }}
-            >
-              ✓ {successMsg}
-            </div>
-          )}
-
-          <button
-            onClick={handleAdd}
-            disabled={staffList.length >= 10}
-            style={{
-              width: "100%",
-              padding: "11px 0",
-              background:
-                staffList.length >= 10
-                  ? "rgba(255,255,255,0.05)"
-                  : "linear-gradient(135deg,#3b82f6,#1d4ed8)",
-              border: "none",
-              borderRadius: 10,
-              color: staffList.length >= 10 ? "#4b5563" : "#fff",
-              fontWeight: 800,
-              fontSize: 14,
-              cursor: staffList.length >= 10 ? "not-allowed" : "pointer",
-            }}
-          >
-            追加する
-          </button>
-        </div>
-
-        {staffList.length === 0 ? (
-          <div
-            style={{
-              textAlign: "center",
-              padding: "40px 20px",
-              color: "#4b5563",
-              fontSize: 14,
-              border: "1px dashed rgba(255,255,255,0.06)",
-              borderRadius: 16,
-            }}
-          >
-            まだスタッフが登録されていません
-          </div>
-        ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-            {staffList.map((staff) => (
+            {staffOptions.length === 0 ? (
               <div
-                key={staff.id}
                 style={{
-                  background: "#161b27",
-                  border: "1px solid rgba(255,255,255,0.08)",
-                  borderRadius: 12,
-                  padding: "14px 16px",
+                  padding: "13px 14px",
+                  background: "rgba(239,68,68,0.08)",
+                  border: "1px solid rgba(239,68,68,0.2)",
+                  borderRadius: 10,
+                  color: "#fca5a5",
+                  fontSize: 14,
+                  lineHeight: 1.5,
                 }}
               >
-                {editing?.id === staff.id ? (
-                  <div>
-                    <div
-                      style={{
-                        display: "flex",
-                        gap: 10,
-                        marginBottom: 10,
-                        flexWrap: "wrap",
-                      }}
-                    >
-                      <input
-                        type="text"
-                        value={editing.name}
-                        onChange={(e) => {
-                          setEditing({ ...editing, name: e.target.value });
-                          setError("");
-                        }}
-                        style={{
-                          flex: "1 1 160px",
-                          padding: "9px 12px",
-                          background: "#0d1117",
-                          border: "1px solid #3b82f6",
-                          borderRadius: 8,
-                          color: "#f1f5f9",
-                          fontSize: 14,
-                        }}
-                      />
-                      <select
-                        value={editing.rank}
-                        onChange={(e) =>
-                          setEditing({
-                            ...editing,
-                            rank: e.target.value as StaffRank,
-                          })
-                        }
-                        style={{
-                          flex: "1 1 140px",
-                          padding: "9px 12px",
-                          background: "#0d1117",
-                          border: "1px solid rgba(255,255,255,0.1)",
-                          borderRadius: 8,
-                          color: "#f1f5f9",
-                          fontSize: 14,
-                        }}
-                      >
-                        {RANKS.map(([val, label]) => (
-                          <option key={val} value={val}>
-                            {label}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
+                この店舗にはまだスタッフが登録されていません。先に設定画面で登録してください。
+              </div>
+            ) : (
+              <>
+                <select
+                  value={selectedStaffId}
+                  onChange={(e) => {
+                    const found = staffOptions.find((s) => s.id === e.target.value);
+                    setSelectedStaffId(e.target.value);
+                    setSelectedStaffName(found?.name ?? "");
+                    setSelectedStaffRank(found?.rank ?? "stylist");
+                  }}
+                  style={{
+                    width: "100%",
+                    padding: "13px 14px",
+                    background: "#0d1117",
+                    border: "1px solid rgba(255,255,255,0.1)",
+                    borderRadius: 10,
+                    color: "#f1f5f9",
+                    fontSize: 15,
+                    appearance: "none",
+                    cursor: "pointer",
+                    boxSizing: "border-box",
+                  }}
+                >
+                  {staffOptions.map((staff) => (
+                    <option key={staff.id} value={staff.id}>
+                      {staff.name}
+                    </option>
+                  ))}
+                </select>
 
-                    <div style={{ display: "flex", gap: 8 }}>
-                      <button
-                        onClick={handleEditSave}
-                        style={{
-                          flex: 1,
-                          padding: "9px 0",
-                          background: "#10b981",
-                          border: "none",
-                          borderRadius: 8,
-                          color: "#fff",
-                          fontWeight: 700,
-                          fontSize: 13,
-                          cursor: "pointer",
-                        }}
-                      >
-                        保存
-                      </button>
+                <div
+                  style={{
+                    marginTop: 8,
+                    fontSize: 12,
+                    color: "#6b7280",
+                  }}
+                >
+                  ランク: {RANK_LABELS[selectedStaffRank]}
+                </div>
+              </>
+            )}
+          </div>
 
-                      <button
-                        onClick={() => {
-                          setEditing(null);
-                          setError("");
-                        }}
-                        style={{
-                          flex: 1,
-                          padding: "9px 0",
-                          background: "rgba(255,255,255,0.05)",
-                          border: "1px solid rgba(255,255,255,0.08)",
-                          borderRadius: 8,
-                          color: "#9ca3af",
-                          fontWeight: 700,
-                          fontSize: 13,
-                          cursor: "pointer",
-                        }}
-                      >
-                        キャンセル
-                      </button>
-                    </div>
-                  </div>
-                ) : (
+          <div style={{ marginBottom: 16 }}>
+            <label
+              style={{
+                fontSize: 12,
+                color: "#9ca3af",
+                display: "block",
+                marginBottom: 6,
+                fontWeight: 600,
+                letterSpacing: "0.04em",
+              }}
+            >
+              売上（円）
+            </label>
+
+            <input
+              type="number"
+              inputMode="numeric"
+              value={sales}
+              onChange={(e) => setSales(e.target.value)}
+              placeholder="例：128500"
+              style={{
+                width: "100%",
+                padding: "13px 14px",
+                background: "#0d1117",
+                border: "1px solid rgba(255,255,255,0.1)",
+                borderRadius: 10,
+                color: "#f1f5f9",
+                fontSize: 15,
+                boxSizing: "border-box",
+              }}
+            />
+          </div>
+
+          <div style={{ marginBottom: 16 }}>
+            <label
+              style={{
+                fontSize: 12,
+                color: "#9ca3af",
+                display: "block",
+                marginBottom: 6,
+                fontWeight: 600,
+                letterSpacing: "0.04em",
+              }}
+            >
+              客数（人）
+            </label>
+
+            <input
+              type="number"
+              inputMode="numeric"
+              value={customers}
+              onChange={(e) => setCustomers(e.target.value)}
+              placeholder="例：12"
+              style={{
+                width: "100%",
+                padding: "13px 14px",
+                background: "#0d1117",
+                border: "1px solid rgba(255,255,255,0.1)",
+                borderRadius: 10,
+                color: "#f1f5f9",
+                fontSize: 15,
+                boxSizing: "border-box",
+              }}
+            />
+          </div>
+
+          <div style={{ marginBottom: 20 }}>
+            <label
+              style={{
+                fontSize: 12,
+                color: "#9ca3af",
+                display: "block",
+                marginBottom: 6,
+                fontWeight: 600,
+                letterSpacing: "0.04em",
+              }}
+            >
+              稼働時間（h）
+            </label>
+
+            <input
+              type="number"
+              inputMode="decimal"
+              value={hours}
+              onChange={(e) => setHours(e.target.value)}
+              placeholder="例：8.0"
+              style={{
+                width: "100%",
+                padding: "13px 14px",
+                background: "#0d1117",
+                border: "1px solid rgba(255,255,255,0.1)",
+                borderRadius: 10,
+                color: "#f1f5f9",
+                fontSize: 15,
+                boxSizing: "border-box",
+              }}
+            />
+          </div>
+
+          <button
+            onClick={handleDiagnose}
+            disabled={loading || staffOptions.length === 0}
+            style={{
+              width: "100%",
+              padding: "15px 0",
+              background:
+                loading || staffOptions.length === 0
+                  ? "rgba(255,255,255,0.05)"
+                  : "linear-gradient(135deg, #3b82f6, #1d4ed8)",
+              border: "none",
+              borderRadius: 10,
+              color: loading || staffOptions.length === 0 ? "#6b7280" : "white",
+              fontWeight: 800,
+              fontSize: 16,
+              cursor: loading || staffOptions.length === 0 ? "not-allowed" : "pointer",
+              letterSpacing: "0.04em",
+              transition: "all 0.2s ease",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 8,
+            }}
+          >
+            {loading ? (
+              <>
+                <span
+                  style={{
+                    width: 16,
+                    height: 16,
+                    border: "2px solid #6b7280",
+                    borderTopColor: "#f1f5f9",
+                    borderRadius: "50%",
+                    display: "inline-block",
+                    animation: "spin 0.6s linear infinite",
+                  }}
+                />
+                診断中...
+              </>
+            ) : (
+              "診断する"
+            )}
+          </button>
+
+          <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+        </div>
+
+        {result && (
+          <>
+            <div style={{ display: "flex", flexDirection: "column", gap: 12, marginBottom: 16 }}>
+              <div
+                style={{
+                  background: RISK_COLORS[result.productivityRisk].bg,
+                  border: `1px solid ${RISK_COLORS[result.productivityRisk].border}`,
+                  borderRadius: 14,
+                  padding: "18px 20px",
+                }}
+              >
+                <div
+                  style={{
+                    fontSize: 12,
+                    color: "#9ca3af",
+                    fontWeight: 600,
+                    letterSpacing: "0.04em",
+                    marginBottom: 4,
+                  }}
+                >
+                  生産性
+                </div>
+
+                <div
+                  style={{
+                    fontSize: 36,
+                    fontWeight: 900,
+                    color: RISK_COLORS[result.productivityRisk].text,
+                    letterSpacing: "-0.02em",
+                    fontVariantNumeric: "tabular-nums",
+                  }}
+                >
+                  ¥{result.productivity.toLocaleString()}
+                  <span style={{ fontSize: 14, fontWeight: 600, marginLeft: 4 }}>/時間</span>
+                </div>
+              </div>
+
+              <div style={{ display: "flex", gap: 12 }}>
+                {[
+                  {
+                    label: "客単価",
+                    value: `¥${result.avgPrice.toLocaleString()}`,
+                    risk: result.avgPriceRisk,
+                  },
+                  {
+                    label: "回転数",
+                    value: result.rotation.toFixed(2),
+                    risk: result.rotationRisk,
+                  },
+                ].map((item) => (
                   <div
+                    key={item.label}
                     style={{
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "space-between",
+                      flex: 1,
+                      background: RISK_COLORS[item.risk].bg,
+                      border: `1px solid ${RISK_COLORS[item.risk].border}`,
+                      borderRadius: 14,
+                      padding: "16px",
                     }}
                   >
-                    <div>
-                      <div
-                        style={{
-                          fontWeight: 700,
-                          fontSize: 15,
-                          color: "#f1f5f9",
-                        }}
-                      >
-                        {staff.name}
-                      </div>
-                      <div
-                        style={{
-                          fontSize: 12,
-                          color: "#6b7280",
-                          marginTop: 3,
-                        }}
-                      >
-                        {RANK_LABELS[staff.rank]}
-                      </div>
+                    <div
+                      style={{
+                        fontSize: 12,
+                        color: "#9ca3af",
+                        fontWeight: 600,
+                        letterSpacing: "0.04em",
+                        marginBottom: 4,
+                      }}
+                    >
+                      {item.label}
                     </div>
 
-                    <div style={{ display: "flex", gap: 8 }}>
-                      <button
-                        onClick={() => {
-                          setEditing({
-                            id: staff.id,
-                            name: staff.name,
-                            rank: staff.rank,
-                          });
-                          setError("");
-                        }}
-                        style={{
-                          padding: "7px 14px",
-                          background: "rgba(255,255,255,0.05)",
-                          border: "1px solid rgba(255,255,255,0.08)",
-                          borderRadius: 8,
-                          color: "#9ca3af",
-                          fontSize: 12,
-                          fontWeight: 600,
-                          cursor: "pointer",
-                        }}
-                      >
-                        編集
-                      </button>
-
-                      <button
-                        onClick={() => handleRemove(staff.id, staff.name)}
-                        style={{
-                          padding: "7px 14px",
-                          background: "rgba(239,68,68,0.08)",
-                          border: "1px solid rgba(239,68,68,0.2)",
-                          borderRadius: 8,
-                          color: "#ef4444",
-                          fontSize: 12,
-                          fontWeight: 600,
-                          cursor: "pointer",
-                        }}
-                      >
-                        削除
-                      </button>
+                    <div
+                      style={{
+                        fontSize: 24,
+                        fontWeight: 900,
+                        color: RISK_COLORS[item.risk].text,
+                        letterSpacing: "-0.02em",
+                        fontVariantNumeric: "tabular-nums",
+                      }}
+                    >
+                      {item.value}
                     </div>
                   </div>
-                )}
+                ))}
               </div>
-            ))}
-          </div>
+            </div>
+
+            <div
+              style={{
+                background: "#161b27",
+                border: `1px solid ${RISK_COLORS[result.primaryIssueRisk].border}`,
+                borderRadius: 14,
+                padding: "20px",
+                marginBottom: 16,
+                borderLeft: `4px solid ${RISK_COLORS[result.primaryIssueRisk].text}`,
+                paddingLeft: 18,
+              }}
+            >
+              <div
+                style={{
+                  fontSize: 12,
+                  color: "#9ca3af",
+                  fontWeight: 600,
+                  letterSpacing: "0.04em",
+                  marginBottom: 8,
+                }}
+              >
+                最優先課題
+              </div>
+
+              <div
+                style={{
+                  fontSize: 26,
+                  fontWeight: 900,
+                  color: RISK_COLORS[result.primaryIssueRisk].text,
+                  letterSpacing: "-0.02em",
+                  lineHeight: 1.2,
+                }}
+              >
+                {result.primaryIssueLabel}
+              </div>
+
+              {result.primaryIssueKey !== "none" && (
+                <div style={{ fontSize: 13, color: "#6b7280", marginTop: 6 }}>
+                  {result.primaryIssueKey === "low_price" && "客単価が基準値を下回っています。提案強化が必要です。"}
+                  {result.primaryIssueKey === "low_rotation" && "回転数が基準値を下回っています。稼働効率を見直してください。"}
+                  {result.primaryIssueKey === "low_productivity" && "生産性が基準値を下回っています。時間配分を最適化してください。"}
+                </div>
+              )}
+
+              <div style={{ fontSize: 12, color: "#6b7280", marginTop: 8 }}>
+                対象スタッフ: {selectedStaffName || "未選択"} / {RANK_LABELS[selectedStaffRank]}
+              </div>
+            </div>
+
+            <div
+              style={{
+                background: "#161b27",
+                border: "1px solid rgba(255,255,255,0.08)",
+                borderRadius: 14,
+                padding: "20px",
+              }}
+            >
+              <div
+                style={{
+                  fontSize: 12,
+                  color: "#9ca3af",
+                  fontWeight: 600,
+                  letterSpacing: "0.04em",
+                  marginBottom: 14,
+                }}
+              >
+                今週やること
+              </div>
+
+              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                {result.actions.map((action, i) => (
+                  <div
+                    key={i}
+                    onClick={() => toggleCheck(i)}
+                    style={{
+                      display: "flex",
+                      alignItems: "flex-start",
+                      gap: 12,
+                      cursor: "pointer",
+                      padding: "10px 12px",
+                      borderRadius: 10,
+                      background: checkedActions[i]
+                        ? "rgba(16,185,129,0.06)"
+                        : "rgba(255,255,255,0.02)",
+                      border: `1px solid ${
+                        checkedActions[i]
+                          ? "rgba(16,185,129,0.2)"
+                          : "rgba(255,255,255,0.05)"
+                      }`,
+                      transition: "all 0.2s ease",
+                    }}
+                  >
+                    <div
+                      style={{
+                        flexShrink: 0,
+                        width: 20,
+                        height: 20,
+                        borderRadius: 6,
+                        border: `2px solid ${
+                          checkedActions[i] ? "#10b981" : "rgba(255,255,255,0.2)"
+                        }`,
+                        background: checkedActions[i] ? "#10b981" : "transparent",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        marginTop: 1,
+                        transition: "all 0.2s ease",
+                      }}
+                    >
+                      {checkedActions[i] && (
+                        <svg width="11" height="9" viewBox="0 0 11 9" fill="none">
+                          <path
+                            d="M1 4L4 7.5L10 1"
+                            stroke="white"
+                            strokeWidth="2"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          />
+                        </svg>
+                      )}
+                    </div>
+
+                    <span
+                      style={{
+                        fontSize: 14,
+                        color: checkedActions[i] ? "#6b7280" : "#d1d5db",
+                        lineHeight: 1.5,
+                        textDecoration: checkedActions[i] ? "line-through" : "none",
+                        transition: "all 0.2s ease",
+                      }}
+                    >
+                      {action}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </>
         )}
       </main>
     </div>
