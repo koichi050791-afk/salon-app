@@ -15,12 +15,43 @@ const STORE_SETTINGS: Record<
     excludeACR?: boolean;
   }
 > = {
-  sanda: { label: "三田店", targetProductivity: 6000, targetAvgPrice: 8000, targetRotation: 1.0, excludeACR: true },
-  nishinomiyakita: { label: "西宮北口店", targetProductivity: 7000, targetAvgPrice: 9000, targetRotation: 1.2 },
-  sakasegawa: { label: "逆瀬川店", targetProductivity: 6500, targetAvgPrice: 8500, targetRotation: 1.1 },
-  nigawa: { label: "仁川店", targetProductivity: 6200, targetAvgPrice: 8200, targetRotation: 1.0 },
-  kawanishi: { label: "川西店", targetProductivity: 6000, targetAvgPrice: 8000, targetRotation: 1.1 },
-  umeda: { label: "梅田店", targetProductivity: 8000, targetAvgPrice: 10000, targetRotation: 1.3 },
+  sanda: {
+    label: "三田店",
+    targetProductivity: 6000,
+    targetAvgPrice: 8000,
+    targetRotation: 1.0,
+    excludeACR: true,
+  },
+  nishinomiyakita: {
+    label: "西宮北口店",
+    targetProductivity: 7000,
+    targetAvgPrice: 9000,
+    targetRotation: 1.2,
+  },
+  sakasegawa: {
+    label: "逆瀬川店",
+    targetProductivity: 6500,
+    targetAvgPrice: 8500,
+    targetRotation: 1.1,
+  },
+  nigawa: {
+    label: "仁川店",
+    targetProductivity: 6200,
+    targetAvgPrice: 8200,
+    targetRotation: 1.0,
+  },
+  kawanishi: {
+    label: "川西店",
+    targetProductivity: 6000,
+    targetAvgPrice: 8000,
+    targetRotation: 1.1,
+  },
+  umeda: {
+    label: "梅田店",
+    targetProductivity: 8000,
+    targetAvgPrice: 10000,
+    targetRotation: 1.3,
+  },
 };
 
 const ACTIONS: Record<string, string[]> = {
@@ -100,7 +131,10 @@ function diagnose(
   const avgPrice = customers > 0 ? Math.round(sales / customers) : 0;
   const rotation = hours > 0 ? Math.round((customers / hours) * 100) / 100 : 0;
 
-  const productivityRisk = getRiskLevel(productivity, settings.targetProductivity);
+  const productivityRisk = getRiskLevel(
+    productivity,
+    settings.targetProductivity
+  );
   const avgPriceRisk = getRiskLevel(avgPrice, settings.targetAvgPrice);
   const rotationRisk = getRiskLevel(rotation, settings.targetRotation);
 
@@ -152,7 +186,8 @@ export default function Home() {
   const [storeId, setStoreId] = useState("nishinomiyakita");
   const [selectedStaffId, setSelectedStaffId] = useState("");
   const [selectedStaffName, setSelectedStaffName] = useState("");
-  const [selectedStaffRank, setSelectedStaffRank] = useState<StaffRank>("stylist");
+  const [selectedStaffRank, setSelectedStaffRank] =
+    useState<StaffRank>("stylist");
 
   const [sales, setSales] = useState("");
   const [customers, setCustomers] = useState("");
@@ -160,7 +195,11 @@ export default function Home() {
 
   const [result, setResult] = useState<DiagnosisResult | null>(null);
   const [loading, setLoading] = useState(false);
-  const [checkedActions, setCheckedActions] = useState<boolean[]>([false, false, false]);
+  const [checkedActions, setCheckedActions] = useState<boolean[]>([
+    false,
+    false,
+    false,
+  ]);
 
   const staffOptions = useMemo(() => {
     return getActiveStaffOptions(storeId);
@@ -216,7 +255,8 @@ export default function Home() {
         minHeight: "100vh",
         background: "#0d1117",
         color: "#f1f5f9",
-        fontFamily: "'Noto Sans JP', 'Hiragino Kaku Gothic ProN', 'Hiragino Sans', sans-serif",
+        fontFamily:
+          "'Noto Sans JP', 'Hiragino Kaku Gothic ProN', 'Hiragino Sans', sans-serif",
       }}
     >
       <header
@@ -247,7 +287,9 @@ export default function Home() {
           >
             ✂
           </div>
-          <span style={{ fontWeight: 800, fontSize: 15, letterSpacing: "-0.02em" }}>
+          <span
+            style={{ fontWeight: 800, fontSize: 15, letterSpacing: "-0.02em" }}
+          >
             サロンOS
           </span>
         </div>
@@ -287,7 +329,9 @@ export default function Home() {
         </div>
       </header>
 
-      <main style={{ maxWidth: 480, margin: "0 auto", padding: "24px 20px 48px" }}>
+      <main
+        style={{ maxWidth: 480, margin: "0 auto", padding: "24px 20px 48px" }}
+      >
         <div
           style={{
             background: "#161b27",
@@ -368,7 +412,9 @@ export default function Home() {
                 <select
                   value={selectedStaffId}
                   onChange={(e) => {
-                    const found = staffOptions.find((s) => s.id === e.target.value);
+                    const found = staffOptions.find(
+                      (s) => s.id === e.target.value
+                    );
                     setSelectedStaffId(e.target.value);
                     setSelectedStaffName(found?.name ?? "");
                     setSelectedStaffRank(found?.rank ?? "stylist");
@@ -517,10 +563,14 @@ export default function Home() {
                   : "linear-gradient(135deg, #3b82f6, #1d4ed8)",
               border: "none",
               borderRadius: 10,
-              color: loading || staffOptions.length === 0 ? "#6b7280" : "white",
+              color:
+                loading || staffOptions.length === 0 ? "#6b7280" : "white",
               fontWeight: 800,
               fontSize: 16,
-              cursor: loading || staffOptions.length === 0 ? "not-allowed" : "pointer",
+              cursor:
+                loading || staffOptions.length === 0
+                  ? "not-allowed"
+                  : "pointer",
               letterSpacing: "0.04em",
               transition: "all 0.2s ease",
               display: "flex",
@@ -554,7 +604,14 @@ export default function Home() {
 
         {result && (
           <>
-            <div style={{ display: "flex", flexDirection: "column", gap: 12, marginBottom: 16 }}>
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: 12,
+                marginBottom: 16,
+              }}
+            >
               <div
                 style={{
                   background: RISK_COLORS[result.productivityRisk].bg,
@@ -585,7 +642,11 @@ export default function Home() {
                   }}
                 >
                   ¥{result.productivity.toLocaleString()}
-                  <span style={{ fontSize: 14, fontWeight: 600, marginLeft: 4 }}>/時間</span>
+                  <span
+                    style={{ fontSize: 14, fontWeight: 600, marginLeft: 4 }}
+                  >
+                    /時間
+                  </span>
                 </div>
               </div>
 
@@ -677,14 +738,18 @@ export default function Home() {
 
               {result.primaryIssueKey !== "none" && (
                 <div style={{ fontSize: 13, color: "#6b7280", marginTop: 6 }}>
-                  {result.primaryIssueKey === "low_price" && "客単価が基準値を下回っています。提案強化が必要です。"}
-                  {result.primaryIssueKey === "low_rotation" && "回転数が基準値を下回っています。稼働効率を見直してください。"}
-                  {result.primaryIssueKey === "low_productivity" && "生産性が基準値を下回っています。時間配分を最適化してください。"}
+                  {result.primaryIssueKey === "low_price" &&
+                    "客単価が基準値を下回っています。提案強化が必要です。"}
+                  {result.primaryIssueKey === "low_rotation" &&
+                    "回転数が基準値を下回っています。稼働効率を見直してください。"}
+                  {result.primaryIssueKey === "low_productivity" &&
+                    "生産性が基準値を下回っています。時間配分を最適化してください。"}
                 </div>
               )}
 
               <div style={{ fontSize: 12, color: "#6b7280", marginTop: 8 }}>
-                対象スタッフ: {selectedStaffName || "未選択"} / {RANK_LABELS[selectedStaffRank]}
+                対象スタッフ: {selectedStaffName || "未選択"} /{" "}
+                {RANK_LABELS[selectedStaffRank]}
               </div>
             </div>
 
@@ -708,7 +773,9 @@ export default function Home() {
                 今週やること
               </div>
 
-              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              <div
+                style={{ display: "flex", flexDirection: "column", gap: 10 }}
+              >
                 {result.actions.map((action, i) => (
                   <div
                     key={i}
@@ -738,9 +805,13 @@ export default function Home() {
                         height: 20,
                         borderRadius: 6,
                         border: `2px solid ${
-                          checkedActions[i] ? "#10b981" : "rgba(255,255,255,0.2)"
+                          checkedActions[i]
+                            ? "#10b981"
+                            : "rgba(255,255,255,0.2)"
                         }`,
-                        background: checkedActions[i] ? "#10b981" : "transparent",
+                        background: checkedActions[i]
+                          ? "#10b981"
+                          : "transparent",
                         display: "flex",
                         alignItems: "center",
                         justifyContent: "center",
@@ -749,7 +820,12 @@ export default function Home() {
                       }}
                     >
                       {checkedActions[i] && (
-                        <svg width="11" height="9" viewBox="0 0 11 9" fill="none">
+                        <svg
+                          width="11"
+                          height="9"
+                          viewBox="0 0 11 9"
+                          fill="none"
+                        >
                           <path
                             d="M1 4L4 7.5L10 1"
                             stroke="white"
@@ -766,7 +842,9 @@ export default function Home() {
                         fontSize: 14,
                         color: checkedActions[i] ? "#6b7280" : "#d1d5db",
                         lineHeight: 1.5,
-                        textDecoration: checkedActions[i] ? "line-through" : "none",
+                        textDecoration: checkedActions[i]
+                          ? "line-through"
+                          : "none",
                         transition: "all 0.2s ease",
                       }}
                     >
