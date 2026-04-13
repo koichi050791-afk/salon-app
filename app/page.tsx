@@ -77,7 +77,58 @@ const ACTIONS: Record<string, string[]> = {
   ],
 };
 
+const HISTORY_KEY = "salon_os_saved_diagnoses";
+
 type RiskLevel = "green" | "yellow" | "red";
+
+type DiagnosisResult = {
+  productivity: number;
+  avgPrice: number;
+  rotation: number;
+  productivityRisk: RiskLevel;
+  avgPriceRisk: RiskLevel;
+  rotationRisk: RiskLevel;
+  primaryIssueLabel: string;
+  primaryIssueKey: string;
+  primaryIssueRisk: RiskLevel;
+  actions: string[];
+};
+
+type SavedDiagnosis = {
+  id: string;
+  date: string;
+  storeId: string;
+  storeLabel: string;
+  staffId: string;
+  staffName: string;
+  staffRank: StaffRank;
+  sales: number;
+  customers: number;
+  hours: number;
+  result: DiagnosisResult;
+  savedAt: string;
+};
+
+function todayString() {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+function loadSavedDiagnoses(): SavedDiagnosis[] {
+  if (typeof window === "undefined") return [];
+  try {
+    return JSON.parse(localStorage.getItem(HISTORY_KEY) ?? "[]");
+  } catch {
+    return [];
+  }
+}
+
+function saveSavedDiagnoses(items: SavedDiagnosis[]) {
+  localStorage.setItem(HISTORY_KEY, JSON.stringify(items));
+}
 
 function getRiskLevel(value: number, target: number): RiskLevel {
   const ratio = value / target;
@@ -105,19 +156,6 @@ const RISK_COLORS: Record<
     bg: "rgba(239,68,68,0.08)",
     border: "rgba(239,68,68,0.25)",
   },
-};
-
-type DiagnosisResult = {
-  productivity: number;
-  avgPrice: number;
-  rotation: number;
-  productivityRisk: RiskLevel;
-  avgPriceRisk: RiskLevel;
-  rotationRisk: RiskLevel;
-  primaryIssueLabel: string;
-  primaryIssueKey: string;
-  primaryIssueRisk: RiskLevel;
-  actions: string[];
 };
 
 function diagnose(
@@ -189,21 +227,28 @@ export default function Home() {
   const [selectedStaffRank, setSelectedStaffRank] =
     useState<StaffRank>("stylist");
 
+  const [entryDate, setEntryDate] = useState(todayString());
   const [sales, setSales] = useState("");
   const [customers, setCustomers] = useState("");
   const [hours, setHours] = useState("");
 
   const [result, setResult] = useState<DiagnosisResult | null>(null);
   const [loading, setLoading] = useState(false);
+  const [saveMessage, setSaveMessage] = useState("");
   const [checkedActions, setCheckedActions] = useState<boolean[]>([
     false,
     false,
     false,
   ]);
+  const [savedItems, setSavedItems] = useState<SavedDiagnosis[]>([]);
 
   const staffOptions = useMemo(() => {
     return getActiveStaffOptions(storeId);
   }, [storeId]);
+
+  useEffect(() => {
+    setSavedItems(loadSavedDiagnoses());
+  }, []);
 
   useEffect(() => {
     if (staffOptions.length === 0) {
@@ -235,12 +280,46 @@ export default function Home() {
     if (!s || !c || !h) return;
 
     setLoading(true);
+    setSaveMessage("");
     await new Promise((r) => setTimeout(r, 500));
 
     const diagnosed = diagnose(s, c, h, storeId);
     setResult(diagnosed);
     setCheckedActions([false, false, false]);
     setLoading(false);
+  };
+
+  const handleSave = () => {
+    const s = parseFloat(sales);
+    const c = parseFloat(customers);
+    const h = parseFloat(hours);
+
+    if (!selectedStaffId) return;
+    if (!s || !c || !h) return;
+
+    const diagnosed = result ?? diagnose(s, c, h, storeId);
+
+    const newItem: SavedDiagnosis = {
+      id: crypto.randomUUID(),
+      date: entryDate,
+      storeId,
+      storeLabel: STORE_SETTINGS[storeId].label,
+      staffId: selectedStaffId,
+      staffName: selectedStaffName,
+      staffRank: selectedStaffRank,
+      sales: s,
+      customers: c,
+      hours: h,
+      result: diagnosed,
+      savedAt: new Date().toISOString(),
+    };
+
+    const nextItems = [newItem, ...savedItems].slice(0, 10);
+    saveSavedDiagnoses(nextItems);
+    setSavedItems(nextItems);
+    setResult(diagnosed);
+    setSaveMessage("保存しました");
+    setTimeout(() => setSaveMessage(""), 2000);
   };
 
   const toggleCheck = (i: number) => {
@@ -463,6 +542,37 @@ export default function Home() {
                 letterSpacing: "0.04em",
               }}
             >
+              日付
+            </label>
+
+            <input
+              type="date"
+              value={entryDate}
+              onChange={(e) => setEntryDate(e.target.value)}
+              style={{
+                width: "100%",
+                padding: "13px 14px",
+                background: "#0d1117",
+                border: "1px solid rgba(255,255,255,0.1)",
+                borderRadius: 10,
+                color: "#f1f5f9",
+                fontSize: 15,
+                boxSizing: "border-box",
+              }}
+            />
+          </div>
+
+          <div style={{ marginBottom: 16 }}>
+            <label
+              style={{
+                fontSize: 12,
+                color: "#9ca3af",
+                display: "block",
+                marginBottom: 6,
+                fontWeight: 600,
+                letterSpacing: "0.04em",
+              }}
+            >
               売上（円）
             </label>
 
@@ -551,53 +661,90 @@ export default function Home() {
             />
           </div>
 
-          <button
-            onClick={handleDiagnose}
-            disabled={loading || staffOptions.length === 0}
-            style={{
-              width: "100%",
-              padding: "15px 0",
-              background:
-                loading || staffOptions.length === 0
-                  ? "rgba(255,255,255,0.05)"
-                  : "linear-gradient(135deg, #3b82f6, #1d4ed8)",
-              border: "none",
-              borderRadius: 10,
-              color:
-                loading || staffOptions.length === 0 ? "#6b7280" : "white",
-              fontWeight: 800,
-              fontSize: 16,
-              cursor:
-                loading || staffOptions.length === 0
-                  ? "not-allowed"
-                  : "pointer",
-              letterSpacing: "0.04em",
-              transition: "all 0.2s ease",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              gap: 8,
-            }}
-          >
-            {loading ? (
-              <>
-                <span
-                  style={{
-                    width: 16,
-                    height: 16,
-                    border: "2px solid #6b7280",
-                    borderTopColor: "#f1f5f9",
-                    borderRadius: "50%",
-                    display: "inline-block",
-                    animation: "spin 0.6s linear infinite",
-                  }}
-                />
-                診断中...
-              </>
-            ) : (
-              "診断する"
-            )}
-          </button>
+          <div style={{ display: "flex", gap: 10, flexDirection: "column" }}>
+            <button
+              onClick={handleDiagnose}
+              disabled={loading || staffOptions.length === 0}
+              style={{
+                width: "100%",
+                padding: "15px 0",
+                background:
+                  loading || staffOptions.length === 0
+                    ? "rgba(255,255,255,0.05)"
+                    : "linear-gradient(135deg, #3b82f6, #1d4ed8)",
+                border: "none",
+                borderRadius: 10,
+                color:
+                  loading || staffOptions.length === 0 ? "#6b7280" : "white",
+                fontWeight: 800,
+                fontSize: 16,
+                cursor:
+                  loading || staffOptions.length === 0
+                    ? "not-allowed"
+                    : "pointer",
+                letterSpacing: "0.04em",
+                transition: "all 0.2s ease",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 8,
+              }}
+            >
+              {loading ? (
+                <>
+                  <span
+                    style={{
+                      width: 16,
+                      height: 16,
+                      border: "2px solid #6b7280",
+                      borderTopColor: "#f1f5f9",
+                      borderRadius: "50%",
+                      display: "inline-block",
+                      animation: "spin 0.6s linear infinite",
+                    }}
+                  />
+                  診断中...
+                </>
+              ) : (
+                "診断する"
+              )}
+            </button>
+
+            <button
+              onClick={handleSave}
+              disabled={staffOptions.length === 0}
+              style={{
+                width: "100%",
+                padding: "15px 0",
+                background: "rgba(255,255,255,0.06)",
+                border: "1px solid rgba(255,255,255,0.08)",
+                borderRadius: 10,
+                color: staffOptions.length === 0 ? "#6b7280" : "#f1f5f9",
+                fontWeight: 800,
+                fontSize: 16,
+                cursor: staffOptions.length === 0 ? "not-allowed" : "pointer",
+                letterSpacing: "0.04em",
+              }}
+            >
+              保存する
+            </button>
+          </div>
+
+          {saveMessage && (
+            <div
+              style={{
+                marginTop: 12,
+                fontSize: 12,
+                color: "#10b981",
+                background: "rgba(16,185,129,0.08)",
+                border: "1px solid rgba(16,185,129,0.2)",
+                borderRadius: 8,
+                padding: "8px 12px",
+              }}
+            >
+              ✓ {saveMessage}
+            </div>
+          )}
 
           <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
         </div>
@@ -759,6 +906,7 @@ export default function Home() {
                 border: "1px solid rgba(255,255,255,0.08)",
                 borderRadius: 14,
                 padding: "20px",
+                marginBottom: 16,
               }}
             >
               <div
@@ -856,6 +1004,88 @@ export default function Home() {
             </div>
           </>
         )}
+
+        <div
+          style={{
+            background: "#161b27",
+            border: "1px solid rgba(255,255,255,0.08)",
+            borderRadius: 14,
+            padding: "20px",
+          }}
+        >
+          <div
+            style={{
+              fontSize: 12,
+              color: "#9ca3af",
+              fontWeight: 600,
+              letterSpacing: "0.04em",
+              marginBottom: 14,
+            }}
+          >
+            最近の保存データ
+          </div>
+
+          {savedItems.length === 0 ? (
+            <div
+              style={{
+                fontSize: 13,
+                color: "#6b7280",
+                padding: "10px 0",
+              }}
+            >
+              まだ保存データはありません
+            </div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              {savedItems.slice(0, 5).map((item) => (
+                <div
+                  key={item.id}
+                  style={{
+                    background: "rgba(255,255,255,0.03)",
+                    border: "1px solid rgba(255,255,255,0.06)",
+                    borderRadius: 10,
+                    padding: "12px 14px",
+                  }}
+                >
+                  <div
+                    style={{
+                      fontSize: 12,
+                      color: "#9ca3af",
+                      marginBottom: 6,
+                    }}
+                  >
+                    {item.date} / {item.storeLabel}
+                  </div>
+
+                  <div
+                    style={{
+                      fontSize: 14,
+                      fontWeight: 700,
+                      color: "#f1f5f9",
+                      marginBottom: 4,
+                    }}
+                  >
+                    {item.staffName} / {RANK_LABELS[item.staffRank]}
+                  </div>
+
+                  <div
+                    style={{
+                      fontSize: 12,
+                      color: "#6b7280",
+                      lineHeight: 1.6,
+                    }}
+                  >
+                    生産性 ¥{item.result.productivity.toLocaleString()}/時間
+                    <br />
+                    客単価 ¥{item.result.avgPrice.toLocaleString()}
+                    <br />
+                    最優先課題 {item.result.primaryIssueLabel}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </main>
     </div>
   );
