@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import Link from "next/link";
 import { STORES } from "../../lib/constants/stores";
 import { RANK_LABELS } from "../../lib/settings-types";
 import { getMonthlyConfig } from "../../lib/storage/monthlyConfigs";
@@ -10,44 +9,17 @@ import {
   getSavedDiagnosesByStoreAndMonth,
 } from "../../lib/storage/savedDiagnoses";
 import { calcMonthlyStoreMetrics } from "../../lib/logic/monthlyMetrics";
-import { calcStoreRisk, getRiskLabel } from "../../lib/logic/risk";
+import { calcStoreRisk } from "../../lib/logic/risk";
 import type {
   MonthlyConfig,
   MonthlyStoreMetrics,
   RiskLevel,
   SavedDiagnosis,
 } from "../../lib/types/os";
-
-const RISK_STYLE: Record<
-  RiskLevel,
-  { text: string; bg: string; border: string }
-> = {
-  green: {
-    text: "#10b981",
-    bg: "rgba(16,185,129,0.08)",
-    border: "rgba(16,185,129,0.25)",
-  },
-  yellow: {
-    text: "#d4a44b",
-    bg: "rgba(212,164,75,0.10)",
-    border: "rgba(212,164,75,0.24)",
-  },
-  red: {
-    text: "#c97a7a",
-    bg: "rgba(201,122,122,0.10)",
-    border: "rgba(201,122,122,0.22)",
-  },
-  empty: {
-    text: "#8b94a7",
-    bg: "rgba(139,148,167,0.08)",
-    border: "rgba(139,148,167,0.18)",
-  },
-  config_missing: {
-    text: "#7c8db5",
-    bg: "rgba(124,141,181,0.10)",
-    border: "rgba(124,141,181,0.22)",
-  },
-};
+import MetricTile from "../../components/ui/MetricTile";
+import PageHeader from "../../components/ui/PageHeader";
+import PanelCard from "../../components/ui/PanelCard";
+import StatusBadge from "../../components/ui/StatusBadge";
 
 type StoreDashboardCard = {
   storeId: string;
@@ -72,6 +44,18 @@ function formatCurrency(value: number) {
 
 function formatPercent(value: number) {
   return `${Math.round(value * 100)}%`;
+}
+
+function getMetricToneByRate(rate: number): "green" | "yellow" | "red" {
+  if (rate >= 0.95) return "green";
+  if (rate >= 0.88) return "yellow";
+  return "red";
+}
+
+function getYoyTone(rate: number): "green" | "yellow" | "red" {
+  if (rate >= 0.97) return "green";
+  if (rate >= 0.9) return "yellow";
+  return "red";
 }
 
 export default function DashboardPage() {
@@ -130,375 +114,273 @@ export default function DashboardPage() {
     <div
       style={{
         minHeight: "100vh",
-        background: "#0d1117",
+        background:
+          "radial-gradient(circle at top, rgba(44,62,110,0.20), transparent 28%), #0d1117",
         color: "#f1f5f9",
         fontFamily:
           "'Noto Sans JP', 'Hiragino Kaku Gothic ProN', 'Hiragino Sans', sans-serif",
       }}
     >
-      <header
-        style={{
-          position: "sticky",
-          top: 0,
-          zIndex: 50,
-          background: "#0d1117",
-          borderBottom: "1px solid rgba(255,255,255,0.06)",
-          padding: "12px 20px",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          gap: 12,
-          flexWrap: "wrap",
-        }}
-      >
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <div
-            style={{
-              width: 30,
-              height: 30,
-              borderRadius: 8,
-              background: "linear-gradient(135deg,#f59e0b,#ef4444)",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              fontSize: 15,
-            }}
-          >
-            ✂
-          </div>
-          <span
-            style={{
-              fontWeight: 800,
-              fontSize: 15,
-              letterSpacing: "-0.02em",
-            }}
-          >
-            サロンOS
-          </span>
-          <span style={{ color: "#6b7280", fontSize: 13 }}>/</span>
-          <span style={{ fontSize: 13, color: "#9ca3af", fontWeight: 600 }}>
-            全店ダッシュボード
-          </span>
-        </div>
-
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          <Link
-            href="/"
-            style={{
-              fontSize: 12,
-              color: "#9ca3af",
-              textDecoration: "none",
-              padding: "6px 12px",
-              borderRadius: 8,
-              border: "1px solid rgba(255,255,255,0.08)",
-            }}
-          >
-            ホーム
-          </Link>
-          <Link
-            href="/monthly-config"
-            style={{
-              fontSize: 12,
-              color: "#9ca3af",
-              textDecoration: "none",
-              padding: "6px 12px",
-              borderRadius: 8,
-              border: "1px solid rgba(255,255,255,0.08)",
-            }}
-          >
-            月次設定
-          </Link>
-          <Link
-            href="/settings"
-            style={{
-              fontSize: 12,
-              color: "#9ca3af",
-              textDecoration: "none",
-              padding: "6px 12px",
-              borderRadius: 8,
-              border: "1px solid rgba(255,255,255,0.08)",
-            }}
-          >
-            設定
-          </Link>
-        </div>
-      </header>
+      <PageHeader
+        title="サロンOS"
+        subTitle="全店ダッシュボード"
+        navItems={[
+          { href: "/", label: "ホーム" },
+          { href: "/monthly-config", label: "月次設定" },
+          { href: "/settings", label: "設定" },
+        ]}
+      />
 
       <main style={{ maxWidth: 1180, margin: "0 auto", padding: "28px 20px 60px" }}>
-        <h1 style={{ fontSize: 22, fontWeight: 800, marginBottom: 6 }}>
-          全店ダッシュボード
-        </h1>
-        <p style={{ fontSize: 13, color: "#6b7280", marginBottom: 24 }}>
-          {yearMonth} の月次基準と保存データをもとに、全店の状態を確認できます
-        </p>
+        <div style={{ marginBottom: 24 }}>
+          <h1
+            style={{
+              fontSize: 28,
+              fontWeight: 800,
+              marginBottom: 8,
+              letterSpacing: "-0.03em",
+            }}
+          >
+            全店ダッシュボード
+          </h1>
+          <p
+            style={{
+              fontSize: 13,
+              color: "#8b94a7",
+              lineHeight: 1.7,
+            }}
+          >
+            {yearMonth} の月次基準と保存データをもとに、
+            全店の状態を静かに、強く把握する画面です。
+          </p>
+        </div>
 
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
-            gap: 16,
+            gridTemplateColumns: "repeat(auto-fit, minmax(340px, 1fr))",
+            gap: 18,
           }}
         >
-          {sortedCards.map((card) => {
-            const riskStyle = RISK_STYLE[card.risk];
-            const riskLabel = getRiskLabel(card.risk);
-
-            return (
+          {sortedCards.map((card) => (
+            <PanelCard key={card.storeId}>
               <div
-                key={card.storeId}
                 style={{
-                  background: "#161b27",
-                  border: "1px solid rgba(255,255,255,0.08)",
-                  borderRadius: 18,
-                  padding: 18,
+                  display: "flex",
+                  alignItems: "flex-start",
+                  justifyContent: "space-between",
+                  gap: 10,
+                  marginBottom: 16,
                 }}
               >
-                <div
-                  style={{
-                    display: "flex",
-                    alignItems: "flex-start",
-                    justifyContent: "space-between",
-                    gap: 10,
-                    marginBottom: 14,
-                  }}
-                >
-                  <div>
-                    <div
-                      style={{
-                        fontSize: 19,
-                        fontWeight: 800,
-                        color: "#f1f5f9",
-                        marginBottom: 4,
-                      }}
-                    >
-                      {card.storeLabel}
-                    </div>
-                    <div style={{ fontSize: 12, color: "#6b7280" }}>
-                      当月保存件数 {card.monthSavedCount}件
-                    </div>
-                  </div>
-
+                <div>
                   <div
                     style={{
-                      fontSize: 11,
-                      fontWeight: 700,
-                      color: riskStyle.text,
-                      background: riskStyle.bg,
-                      border: `1px solid ${riskStyle.border}`,
-                      borderRadius: 999,
-                      padding: "6px 10px",
-                      whiteSpace: "nowrap",
+                      fontSize: 22,
+                      fontWeight: 800,
+                      color: "#f8fafc",
+                      marginBottom: 6,
+                      letterSpacing: "-0.03em",
                     }}
                   >
-                    {riskLabel}
+                    {card.storeLabel}
+                  </div>
+                  <div
+                    style={{
+                      fontSize: 12,
+                      color: "#6b7280",
+                    }}
+                  >
+                    当月保存件数 {card.monthSavedCount}件
                   </div>
                 </div>
 
-                {!card.monthlyConfig ? (
+                <StatusBadge level={card.risk} />
+              </div>
+
+              {!card.monthlyConfig ? (
+                <div
+                  style={{
+                    minHeight: 180,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    textAlign: "left",
+                    background: "rgba(255,255,255,0.02)",
+                    border: "1px solid rgba(255,255,255,0.05)",
+                    borderRadius: 16,
+                    padding: 18,
+                    color: "#7f889b",
+                    fontSize: 14,
+                    lineHeight: 1.8,
+                  }}
+                >
+                  月次設定がまだありません。
+                  <br />
+                  先に月次設定画面で基準値を保存してください。
+                </div>
+              ) : card.monthSavedCount === 0 || !card.monthlyMetrics ? (
+                <div
+                  style={{
+                    minHeight: 180,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    textAlign: "left",
+                    background: "rgba(255,255,255,0.02)",
+                    border: "1px solid rgba(255,255,255,0.05)",
+                    borderRadius: 16,
+                    padding: 18,
+                    color: "#7f889b",
+                    fontSize: 14,
+                    lineHeight: 1.8,
+                  }}
+                >
+                  この月の保存データがまだありません。
+                  <br />
+                  ホーム画面から入力・保存してください。
+                </div>
+              ) : (
+                <>
+                  <div style={{ display: "flex", gap: 10, marginBottom: 10 }}>
+                    <MetricTile
+                      label="達成率"
+                      value={formatPercent(card.monthlyMetrics.achievementRate)}
+                      tone={getMetricToneByRate(card.monthlyMetrics.achievementRate)}
+                    />
+                    <MetricTile
+                      label="予測達成率"
+                      value={formatPercent(card.monthlyMetrics.forecastAchievementRate)}
+                      tone={getMetricToneByRate(card.monthlyMetrics.forecastAchievementRate)}
+                    />
+                  </div>
+
+                  <div style={{ display: "flex", gap: 10, marginBottom: 10 }}>
+                    <MetricTile
+                      label="前年比"
+                      value={formatPercent(card.monthlyMetrics.yoyRate)}
+                      tone={getYoyTone(card.monthlyMetrics.yoyRate)}
+                    />
+                    <MetricTile
+                      label="月平均生産性"
+                      value={formatCurrency(card.monthlyMetrics.monthlyProductivity)}
+                      tone="indigo"
+                    />
+                  </div>
+
                   <div
                     style={{
-                      fontSize: 13,
-                      color: "#6b7280",
-                      padding: "18px 0",
-                      lineHeight: 1.7,
+                      background: "rgba(255,255,255,0.03)",
+                      border: "1px solid rgba(255,255,255,0.06)",
+                      borderRadius: 16,
+                      padding: "14px 15px",
+                      marginBottom: 10,
                     }}
                   >
-                    月次設定がまだありません。
-                    <br />
-                    先に月次設定画面で基準値を保存してください。
-                  </div>
-                ) : card.monthSavedCount === 0 || !card.monthlyMetrics ? (
-                  <div
-                    style={{
-                      fontSize: 13,
-                      color: "#6b7280",
-                      padding: "18px 0",
-                      lineHeight: 1.7,
-                    }}
-                  >
-                    この月の保存データがまだありません。
-                    <br />
-                    ホーム画面から入力・保存してください。
-                  </div>
-                ) : (
-                  <>
-                    <div style={{ display: "flex", gap: 10, marginBottom: 10 }}>
-                      <div
-                        style={{
-                          flex: 1,
-                          background: riskStyle.bg,
-                          border: `1px solid ${riskStyle.border}`,
-                          borderRadius: 12,
-                          padding: "12px 14px",
-                        }}
-                      >
-                        <div style={{ fontSize: 12, color: "#9ca3af", marginBottom: 4 }}>
-                          達成率
-                        </div>
-                        <div
-                          style={{
-                            fontSize: 22,
-                            fontWeight: 900,
-                            color: riskStyle.text,
-                            letterSpacing: "-0.02em",
-                          }}
-                        >
-                          {formatPercent(card.monthlyMetrics.achievementRate)}
-                        </div>
-                      </div>
-
-                      <div
-                        style={{
-                          flex: 1,
-                          background:
-                            card.monthlyMetrics.forecastAchievementRate >= 0.95
-                              ? "rgba(16,185,129,0.08)"
-                              : card.monthlyMetrics.forecastAchievementRate >= 0.88
-                              ? "rgba(212,164,75,0.10)"
-                              : "rgba(201,122,122,0.10)",
-                          border:
-                            card.monthlyMetrics.forecastAchievementRate >= 0.95
-                              ? "1px solid rgba(16,185,129,0.25)"
-                              : card.monthlyMetrics.forecastAchievementRate >= 0.88
-                              ? "1px solid rgba(212,164,75,0.24)"
-                              : "1px solid rgba(201,122,122,0.22)",
-                          borderRadius: 12,
-                          padding: "12px 14px",
-                        }}
-                      >
-                        <div style={{ fontSize: 12, color: "#9ca3af", marginBottom: 4 }}>
-                          予測達成率
-                        </div>
-                        <div
-                          style={{
-                            fontSize: 22,
-                            fontWeight: 900,
-                            letterSpacing: "-0.02em",
-                          }}
-                        >
-                          {formatPercent(card.monthlyMetrics.forecastAchievementRate)}
-                        </div>
-                      </div>
-                    </div>
-
-                    <div style={{ display: "flex", gap: 10, marginBottom: 10 }}>
-                      <div
-                        style={{
-                          flex: 1,
-                          background: "rgba(255,255,255,0.03)",
-                          border: "1px solid rgba(255,255,255,0.06)",
-                          borderRadius: 12,
-                          padding: "12px 14px",
-                        }}
-                      >
-                        <div style={{ fontSize: 12, color: "#9ca3af", marginBottom: 4 }}>
-                          前年比
-                        </div>
-                        <div
-                          style={{
-                            fontSize: 20,
-                            fontWeight: 900,
-                            color:
-                              card.monthlyMetrics.yoyRate >= 0.97
-                                ? "#10b981"
-                                : card.monthlyMetrics.yoyRate >= 0.9
-                                ? "#d4a44b"
-                                : "#c97a7a",
-                          }}
-                        >
-                          {formatPercent(card.monthlyMetrics.yoyRate)}
-                        </div>
-                      </div>
-
-                      <div
-                        style={{
-                          flex: 1,
-                          background: "rgba(255,255,255,0.03)",
-                          border: "1px solid rgba(255,255,255,0.06)",
-                          borderRadius: 12,
-                          padding: "12px 14px",
-                        }}
-                      >
-                        <div style={{ fontSize: 12, color: "#9ca3af", marginBottom: 4 }}>
-                          月平均生産性
-                        </div>
-                        <div
-                          style={{
-                            fontSize: 20,
-                            fontWeight: 900,
-                            letterSpacing: "-0.02em",
-                          }}
-                        >
-                          {formatCurrency(card.monthlyMetrics.monthlyProductivity)}
-                        </div>
-                      </div>
-                    </div>
-
                     <div
                       style={{
-                        background: "rgba(255,255,255,0.03)",
-                        border: "1px solid rgba(255,255,255,0.06)",
-                        borderRadius: 12,
-                        padding: "12px 14px",
-                        marginBottom: 10,
+                        fontSize: 12,
+                        color: "#9ca3af",
+                        marginBottom: 6,
+                        letterSpacing: "0.04em",
+                        fontWeight: 600,
                       }}
                     >
-                      <div style={{ fontSize: 12, color: "#9ca3af", marginBottom: 4 }}>
-                        最新スタッフ
+                      最新スタッフ
+                    </div>
+                    <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 4 }}>
+                      {card.latest?.staffName ?? "-"}
+                    </div>
+                    <div style={{ fontSize: 12, color: "#6b7280" }}>
+                      {card.latest ? RANK_LABELS[card.latest.staffRank] : "-"}
+                    </div>
+                  </div>
+
+                  <div
+                    style={{
+                      background:
+                        "linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.015))",
+                      border: "1px solid rgba(255,255,255,0.06)",
+                      borderLeft:
+                        card.risk === "green"
+                          ? "4px solid #10b981"
+                          : card.risk === "yellow"
+                          ? "4px solid #d4a44b"
+                          : card.risk === "red"
+                          ? "4px solid #c97a7a"
+                          : "4px solid #7c8db5",
+                      borderRadius: 16,
+                      padding: "14px 15px",
+                      marginBottom: 10,
+                    }}
+                  >
+                    <div
+                      style={{
+                        fontSize: 12,
+                        color: "#9ca3af",
+                        marginBottom: 6,
+                        letterSpacing: "0.04em",
+                        fontWeight: 600,
+                      }}
+                    >
+                      最優先課題
+                    </div>
+                    <div
+                      style={{
+                        fontSize: 18,
+                        fontWeight: 800,
+                        color: "#f1f5f9",
+                        lineHeight: 1.5,
+                        letterSpacing: "-0.02em",
+                      }}
+                    >
+                      {card.latest?.result.primaryIssueLabel ?? "-"}
+                    </div>
+                  </div>
+
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "1fr 1fr",
+                      gap: 10,
+                    }}
+                  >
+                    <div
+                      style={{
+                        background: "rgba(255,255,255,0.02)",
+                        border: "1px solid rgba(255,255,255,0.05)",
+                        borderRadius: 14,
+                        padding: "12px 14px",
+                      }}
+                    >
+                      <div style={{ fontSize: 12, color: "#9ca3af", marginBottom: 6 }}>
+                        最新保存日
                       </div>
                       <div style={{ fontSize: 14, fontWeight: 700 }}>
-                        {card.latest?.staffName ?? "-"}
-                      </div>
-                      <div style={{ fontSize: 12, color: "#6b7280", marginTop: 4 }}>
-                        {card.latest ? RANK_LABELS[card.latest.staffRank] : "-"}
+                        {card.latest?.date ?? "-"}
                       </div>
                     </div>
 
                     <div
                       style={{
-                        background: "rgba(255,255,255,0.03)",
-                        border: `1px solid ${riskStyle.border}`,
-                        borderLeft: `4px solid ${riskStyle.text}`,
-                        borderRadius: 12,
+                        background: "rgba(255,255,255,0.02)",
+                        border: "1px solid rgba(255,255,255,0.05)",
+                        borderRadius: 14,
                         padding: "12px 14px",
-                        marginBottom: 10,
                       }}
                     >
-                      <div style={{ fontSize: 12, color: "#9ca3af", marginBottom: 4 }}>
-                        最優先課題
+                      <div style={{ fontSize: 12, color: "#9ca3af", marginBottom: 6 }}>
+                        経過目標
                       </div>
-                      <div
-                        style={{
-                          fontSize: 16,
-                          fontWeight: 800,
-                          color: riskStyle.text,
-                          lineHeight: 1.4,
-                        }}
-                      >
-                        {card.latest?.result.primaryIssueLabel ?? "-"}
+                      <div style={{ fontSize: 14, fontWeight: 700 }}>
+                        {formatCurrency(card.monthlyMetrics.targetElapsedSales)}
                       </div>
                     </div>
-
-                    <div
-                      style={{
-                        display: "flex",
-                        justifyContent: "space-between",
-                        gap: 10,
-                        flexWrap: "wrap",
-                        fontSize: 12,
-                        color: "#6b7280",
-                      }}
-                    >
-                      <div>最新保存日 {card.latest?.date ?? "-"}</div>
-                      <div>
-                        経過目標 {formatCurrency(card.monthlyMetrics.targetElapsedSales)}
-                      </div>
-                    </div>
-                  </>
-                )}
-              </div>
-            );
-          })}
+                  </div>
+                </>
+              )}
+            </PanelCard>
+          ))}
         </div>
       </main>
     </div>
