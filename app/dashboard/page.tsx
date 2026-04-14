@@ -10,6 +10,7 @@ import {
 } from "../../lib/storage/savedDiagnoses";
 import { calcMonthlyStoreMetrics } from "../../lib/logic/monthlyMetrics";
 import { calcStoreRisk } from "../../lib/logic/risk";
+import { getNextAction } from "../../lib/logic/nextAction";
 import type {
   MonthlyConfig,
   MonthlyStoreMetrics,
@@ -29,6 +30,7 @@ type StoreDashboardCard = {
   monthlyMetrics: MonthlyStoreMetrics | null;
   risk: RiskLevel;
   monthSavedCount: number;
+  nextAction: string;
 };
 
 function currentYearMonth() {
@@ -82,6 +84,13 @@ export default function DashboardPage() {
 
       const risk = calcStoreRisk(monthlyMetrics, hasConfig, hasData);
 
+      const nextAction = getNextAction({
+        risk,
+        metrics: monthlyMetrics,
+        hasConfig,
+        hasData,
+      });
+
       return {
         storeId: store.id,
         storeLabel: store.label,
@@ -90,18 +99,19 @@ export default function DashboardPage() {
         monthlyMetrics,
         risk,
         monthSavedCount: monthDiagnoses.length,
+        nextAction,
       };
     });
   }, [yearMonth, refreshKey]);
 
   const sortedCards = useMemo(() => {
-   const weight: Record<RiskLevel, number> = {
-  red: 0,
-  yellow: 1,
-  green: 2,
-  empty: 3,
-  config_missing: 4,
-};
+    const weight: Record<RiskLevel, number> = {
+      red: 0,
+      yellow: 1,
+      green: 2,
+      empty: 3,
+      config_missing: 4,
+    };
 
     return [...cards].sort((a, b) => {
       const riskDiff = weight[a.risk] - weight[b.risk];
@@ -151,7 +161,7 @@ export default function DashboardPage() {
             }}
           >
             {yearMonth} の月次基準と保存データをもとに、
-            全店の状態を静かに、強く把握する画面です。
+            全店の状態と明日の最優先アクションを確認する画面です。
           </p>
         </div>
 
@@ -198,10 +208,52 @@ export default function DashboardPage() {
                 <StatusBadge level={card.risk} />
               </div>
 
+              <div
+                style={{
+                  background:
+                    "linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.015))",
+                  border: "1px solid rgba(255,255,255,0.06)",
+                  borderLeft:
+                    card.risk === "green"
+                      ? "4px solid #10b981"
+                      : card.risk === "yellow"
+                      ? "4px solid #d4a44b"
+                      : card.risk === "red"
+                      ? "4px solid #c97a7a"
+                      : "4px solid #7c8db5",
+                  borderRadius: 16,
+                  padding: "14px 15px",
+                  marginBottom: 12,
+                }}
+              >
+                <div
+                  style={{
+                    fontSize: 12,
+                    color: "#9ca3af",
+                    marginBottom: 6,
+                    letterSpacing: "0.04em",
+                    fontWeight: 600,
+                  }}
+                >
+                  明日の最優先アクション
+                </div>
+                <div
+                  style={{
+                    fontSize: 16,
+                    fontWeight: 800,
+                    color: "#f1f5f9",
+                    lineHeight: 1.6,
+                    letterSpacing: "-0.02em",
+                  }}
+                >
+                  {card.nextAction}
+                </div>
+              </div>
+
               {!card.monthlyConfig ? (
                 <div
                   style={{
-                    minHeight: 180,
+                    minHeight: 150,
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "center",
@@ -222,7 +274,7 @@ export default function DashboardPage() {
               ) : card.monthSavedCount === 0 || !card.monthlyMetrics ? (
                 <div
                   style={{
-                    minHeight: 180,
+                    minHeight: 150,
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "center",
