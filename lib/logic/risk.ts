@@ -8,21 +8,23 @@ export function calcStoreRisk(
   if (!hasConfig) return "config_missing";
   if (!hasData || !metrics) return "empty";
 
-  if (
-    metrics.forecastAchievementRate < 0.88 ||
-    metrics.yoyRate < 0.9 ||
-    metrics.achievementRate < 0.85
-  ) {
-    return "red";
-  }
+  const productivity = metrics.monthlyProductivity;
+  const forecastRate = metrics.forecastAchievementRate;
+  const yoyRate = metrics.yoyRate;
 
-  if (
-    metrics.forecastAchievementRate < 0.95 ||
-    metrics.yoyRate < 0.97 ||
-    metrics.achievementRate < 0.95
-  ) {
-    return "yellow";
-  }
+  const isRed =
+    productivity < 800000 ||
+    forecastRate < 0.88 ||
+    yoyRate < 0.9;
+
+  if (isRed) return "red";
+
+  const isYellow =
+    productivity < 900000 ||
+    forecastRate < 0.95 ||
+    yoyRate < 0.97;
+
+  if (isYellow) return "yellow";
 
   return "green";
 }

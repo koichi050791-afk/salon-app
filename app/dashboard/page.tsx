@@ -95,13 +95,13 @@ export default function DashboardPage() {
   }, [yearMonth, refreshKey]);
 
   const sortedCards = useMemo(() => {
-    const weight: Record<RiskLevel, number> = {
-      red: 0,
-      yellow: 1,
-      config_missing: 2,
-      empty: 3,
-      green: 4,
-    };
+   const weight: Record<RiskLevel, number> = {
+  red: 0,
+  yellow: 1,
+  green: 2,
+  empty: 3,
+  config_missing: 4,
+};
 
     return [...cards].sort((a, b) => {
       const riskDiff = weight[a.risk] - weight[b.risk];
