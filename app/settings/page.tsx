@@ -1,167 +1,129 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import { STORES } from "../../lib/constants/stores";
-import { RANK_LABELS, StaffProfile, StaffRank } from "../../lib/settings-types";
+import { useEffect, useState } from "react";
+import { STORES } from "@/lib/constants/stores";
+import { RANK_LABELS, StaffProfile, StaffRank } from "@/lib/settings-types";
 import {
-  addStaff,
   getStaffByStore,
+  addStaff,
   removeStaff,
-  updateStaff,
-} from "../../lib/repositories/staff";
-
-const RANKS = Object.entries(RANK_LABELS) as [StaffRank, string][];
-
-type EditingState = {
-  id: string;
-  name: string;
-  rank: StaffRank;
-} | null;
+} from "@/lib/repositories/staff";
 
 export default function SettingsPage() {
-  const [selectedStoreId, setSelectedStoreId] = useState(STORES[0].id);
+  const [selectedStore, setSelectedStore] = useState(STORES[0].id);
   const [staffList, setStaffList] = useState<StaffProfile[]>([]);
   const [newName, setNewName] = useState("");
   const [newRank, setNewRank] = useState<StaffRank>("stylist");
-  const [editing, setEditing] = useState<EditingState>(null);
-  const [error, setError] = useState("");
-  const [successMsg, setSuccessMsg] = useState("");
   const [loading, setLoading] = useState(false);
 
-  const reload = useCallback(async () => {
-    setLoading(true);
-    setError("");
-
-    try {
-      const rows = await getStaffByStore(selectedStoreId);
-      setStaffList(rows);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "読み込み失敗");
-    } finally {
-      setLoading(false);
-    }
-  }, [selectedStoreId]);
-
   useEffect(() => {
-    reload();
-    setSuccessMsg("");
-    setEditing(null);
-  }, [reload]);
+    async function fetchData() {
+      setLoading(true);
+      try {
+        const data = await getStaffByStore(selectedStore);
+        setStaffList(data);
+      } finally {
+        setLoading(false);
+      }
+    }
 
-  function showSuccess(msg: string) {
-    setSuccessMsg(msg);
-    setTimeout(() => setSuccessMsg(""), 2000);
-  }
+    fetchData();
+  }, [selectedStore]);
 
-  async function handleAdd() {
+  const handleAdd = async () => {
     const result = await addStaff({
-      storeId: selectedStoreId,
+      storeId: selectedStore,
       name: newName,
       rank: newRank,
     });
 
     if (!result.ok) {
-      setError(result.error ?? "追加失敗");
+      alert(result.error ?? "追加に失敗しました");
       return;
     }
 
+    const data = await getStaffByStore(selectedStore);
+    setStaffList(data);
     setNewName("");
-    setError("");
-    await reload();
-    showSuccess("追加しました");
-  }
+    setNewRank("stylist");
+  };
 
-  async function handleEditSave() {
-    if (!editing) return;
-
-    const result = await updateStaff(editing.id, editing);
-
-    if (!result.ok) {
-      setError(result.error ?? "更新失敗");
-      return;
-    }
-
-    setEditing(null);
-    await reload();
-    showSuccess("更新しました");
-  }
-
-  async function handleRemove(id: string) {
+  const handleRemove = async (id: string) => {
     const result = await removeStaff(id);
 
     if (!result.ok) {
-      setError(result.error ?? "削除失敗");
+      alert(result.error ?? "削除に失敗しました");
       return;
     }
 
-    await reload();
-    showSuccess("削除しました");
-  }
+    const data = await getStaffByStore(selectedStore);
+    setStaffList(data);
+  };
 
   return (
     <div style={{ padding: 20 }}>
-      <h1>スタッフ設定</h1>
+      <h1>スタッフ設定（Supabase版）</h1>
 
       <div style={{ marginBottom: 20 }}>
-        {STORES.map((s) => (
-          <button key={s.id} onClick={() => setSelectedStoreId(s.id)}>
-            {s.label}
-          </button>
-        ))}
+        <label style={{ display: "block", marginBottom: 8 }}>店舗</label>
+        <select
+          value={selectedStore}
+          onChange={(e) => setSelectedStore(e.target.value)}
+        >
+          {STORES.map((store) => (
+            <option key={store.id} value={store.id}>
+              {store.label}
+            </option>
+          ))}
+        </select>
       </div>
 
-      <input
-        value={newName}
-        onChange={(e) => setNewName(e.target.value)}
-        placeholder="名前"
-      />
+      <div style={{ marginBottom: 20 }}>
+        <label style={{ display: "block", marginBottom: 8 }}>名前</label>
+        <input
+          placeholder="名前"
+          value={newName}
+          onChange={(e) => setNewName(e.target.value)}
+        />
+      </div>
 
-      <select
-        value={newRank}
-        onChange={(e) => setNewRank(e.target.value as StaffRank)}
-      >
-        {RANKS.map(([val, label]) => (
-          <option key={val} value={val}>
-            {label}
-          </option>
-        ))}
-      </select>
+      <div style={{ marginBottom: 20 }}>
+        <label style={{ display: "block", marginBottom: 8 }}>ランク</label>
+        <select
+          value={newRank}
+          onChange={(e) => setNewRank(e.target.value as StaffRank)}
+        >
+          <option value="top">トップスタイリスト</option>
+          <option value="stylist">スタイリスト</option>
+          <option value="junior">ジュニアスタイリスト</option>
+          <option value="colorist">カラーリスト</option>
+        </select>
+      </div>
 
-      <button onClick={handleAdd}>追加</button>
+      <div style={{ marginBottom: 24 }}>
+        <button onClick={handleAdd}>追加</button>
+      </div>
 
-      {error && <p style={{ color: "red" }}>{error}</p>}
-      {successMsg && <p style={{ color: "green" }}>{successMsg}</p>}
+      <h2>スタッフ一覧</h2>
 
       {loading ? (
         <p>読み込み中...</p>
+      ) : staffList.length === 0 ? (
+        <p>まだ登録されていません</p>
       ) : (
-        staffList.map((s) => (
-          <div key={s.id}>
-            {editing?.id === s.id ? (
-              <>
-                <input
-                  value={editing.name}
-                  onChange={(e) =>
-                    setEditing({ ...editing, name: e.target.value })
-                  }
-                />
-                <button onClick={handleEditSave}>保存</button>
-              </>
-            ) : (
-              <>
-                <span>{s.name}</span>
-                <button
-                  onClick={() =>
-                    setEditing({ id: s.id, name: s.name, rank: s.rank })
-                  }
-                >
-                  編集
-                </button>
-                <button onClick={() => handleRemove(s.id)}>削除</button>
-              </>
-            )}
-          </div>
-        ))
+        <ul style={{ paddingLeft: 20 }}>
+          {staffList.map((staff) => (
+            <li key={staff.id} style={{ marginBottom: 8 }}>
+              {staff.name}（{RANK_LABELS[staff.rank]}）
+              <button
+                style={{ marginLeft: 12 }}
+                onClick={() => handleRemove(staff.id)}
+              >
+                削除
+              </button>
+            </li>
+          ))}
+        </ul>
       )}
     </div>
   );

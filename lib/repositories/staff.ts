@@ -1,5 +1,5 @@
 import { getSupabaseClient } from "../supabase/client";
-import type { StaffProfile, StaffRank } from "../settings-types";
+import type { StaffProfile, StaffRank } from "../types/settings-types";
 
 type StaffRow = {
   id: string;
@@ -147,7 +147,9 @@ export async function updateStaff(
   return { ok: true };
 }
 
-export async function removeStaff(id: string): Promise<{ ok: boolean; error?: string }> {
+export async function removeStaff(
+  id: string
+): Promise<{ ok: boolean; error?: string }> {
   const supabase = getSupabaseClient();
 
   const { error } = await supabase
