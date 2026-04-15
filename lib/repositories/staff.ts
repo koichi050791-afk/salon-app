@@ -1,5 +1,5 @@
 import { getSupabaseClient } from "../supabase/client";
-import type { StaffProfile, StaffRank } from "../types/settings-types";
+import type { StaffProfile, StaffRank } from "../settings-types";
 
 type StaffRow = {
   id: string;
