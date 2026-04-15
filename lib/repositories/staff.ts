@@ -38,54 +38,23 @@ export async function getStaffByStore(storeId: string): Promise<StaffProfile[]> 
   return (data as StaffRow[]).map(mapRow);
 }
 
-export async function addStaff(params: {
+export async function addStaff(input: {
   storeId: string;
   name: string;
   rank: StaffRank;
 }): Promise<{ ok: boolean; error?: string }> {
   const supabase = getSupabaseClient();
-  const trimmedName = params.name.trim();
 
-  if (!trimmedName) {
-    return { ok: false, error: "名前を入力してください" };
-  }
+  const { data, error } = await supabase.from("staff").insert([
+    {
+      store_id: input.storeId,
+      name: input.name,
+      rank: input.rank,
+      is_active: true,
+    },
+  ]);
 
-  const { count, error: countError } = await supabase
-    .from("staff")
-    .select("*", { count: "exact", head: true })
-    .eq("store_id", params.storeId)
-    .eq("is_active", true);
-
-  if (countError) {
-    return { ok: false, error: countError.message };
-  }
-
-  if ((count ?? 0) >= 10) {
-    return { ok: false, error: "1店舗あたり最大10名までです" };
-  }
-
-  const { data: duplicateData, error: duplicateError } = await supabase
-    .from("staff")
-    .select("id")
-    .eq("store_id", params.storeId)
-    .eq("is_active", true)
-    .eq("name", trimmedName)
-    .limit(1);
-
-  if (duplicateError) {
-    return { ok: false, error: duplicateError.message };
-  }
-
-  if (duplicateData && duplicateData.length > 0) {
-    return { ok: false, error: "同じ名前のスタッフが既に存在します" };
-  }
-
-  const { error } = await supabase.from("staff").insert({
-    store_id: params.storeId,
-    name: trimmedName,
-    rank: params.rank,
-    is_active: true,
-  });
+  console.log("INSERT RESULT", { data, error });
 
   if (error) {
     return { ok: false, error: error.message };
